@@ -34,11 +34,11 @@ def get_conversion_ratio(row):
     except:
         return 0.0
 
-def chi_squared(m, y):
+def chi_squared(m, y, v):
     #Make my own R2
     y_var = np.var(y)
     t = 0
-    for i in range(v):
+    for i in range(v):        
         t += (y[i] - m[i])**2
     return 1 - t / y_var / v
 
@@ -133,10 +133,10 @@ search_data_u_scaled =  preprocessing.scale(search_data_u)
 search_target_scaled =  preprocessing.scale(search_target)
 
 #----CHOSEN_DATA_SET
-to_use = 0
+to_use = search_data_u
 
 
-#----SVM IMPLEMETATION
+#----MODEL IMPLEMETATION
 
 
 print("Importing models")
@@ -146,19 +146,24 @@ from sklearn.tree import DecisionTreeRegressor
 from sklearn.svm import LinearSVC
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, AdaBoostClassifier
 
-print("Training and testing model")
+print("Training and testing models")
 #import matplotlib.pyplot as plt
 #from sklearn.externals import joblib
 
 classifier_list = []
-classifier_list.append(svm.SVR(C=1e2, gamma=0.01))
+
+#---CLASSIFERS
 #classifier_list.append(svm.SVC(C=1e2, gamma=0.1))
-#classifier_list.append(linear_model.Lasso(alpha = 0.1))
-classifier_list.append(DecisionTreeRegressor(max_depth=5))
 #classifier_list.append(AdaBoostClassifier(n_estimators=100))
 #classifier_list.append(GradientBoostingClassifier(n_estimators=100, learning_rate=1.0, max_depth=1, random_state=0))
 #classifier_list.append(linear_model.LassoLars(alpha=.1))
 #classifier_list.append(RandomForestClassifier(n_estimators=10))
+
+#----REGRESSORS
+#classifier_list.append(svm.SVR(C=1e2, gamma=0.1))
+#classifier_list.append(linear_model.Lasso(alpha = 0.1))
+#classifier_list.append(DecisionTreeRegressor(max_depth=3))
+classifier_list.append(linear_model.SGDRegressor())
 
 #clf = Pipeline([
 #  ('feature_selection', LinearSVC(penalty="l1", dual=False)),
@@ -170,12 +175,12 @@ import time
 start = time.clock()
 
 
-n = 2000    #Number of data points to train on
-v = 200     #number of data points to validate w/
+n = 1000    #Number of data points to train on
+v = 500     #number of data points to validate w/
 
 for clf in classifier_list:
 
-    a = clf.fit(search_data_u[:n], search_target[:n])
+    a = clf.fit(to_use[:n], search_target[:n])
 
     #Cross-reference
     #this_scores = cross_validation.cross_val_score(clf, search_data_u_scaled[:n], search_target[:n], n_jobs=-1, cv=5)
@@ -187,14 +192,17 @@ for clf in classifier_list:
 
     #print("{} {} {}".format(search_data_u[n+1], search_target[n+1] ,clf.predict(search_data_u[n+1])))
 
-    searched = clf.predict(search_data_u[n+1: n+v+1])
+    predicted_data = clf.predict(to_use[n+1: n+v+1])
+    filtered_data = np.array([x if x>0.11 else 0.04 for x in predicted_data.tolist()])
+    #for i in range(v):
+    #    print("{:.3f} - {:.3f}".format(search_target[n+1+i], filtered_data[i]))
+    
+    #print(str(len(predicted_data)) + " " + str(len(filtered_data)))
 
-
-    R2 = clf.score(search_data_u[n+1: n+v+1], search_target[n+1: n+v+1])
+    R2 = clf.score(to_use[n+1: n+v+1], search_target[n+1: n+v+1])
     print("Prediction time: {}s".format(time.clock() - modelled))
-    print("R squared: {} -- {}\n".format(R2,type(clf)))
-
-
+    print("Original R squared: {} -- {}\n".format(R2,type(clf)))
+    print("Filtered R squared: {} -- {}\n".format(chi_squared(filtered_data, search_target[n+1: n+v+1], v),type(clf)))
 
 
 

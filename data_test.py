@@ -115,14 +115,30 @@ print("Done pre-test: {} kws , {} clickthroughs , {} lines".format(kw_counter , 
 #------------------------------------------------------------------------------
 #-------------------------------LOAD DATA--------------------------------------
 #------------------------------------------------------------------------------
-def get_bucket(rate):
-    """ The clustering system, which determines the categories into which each search term is sorted """ 
-    buckets = 20
-    base = int(math.floor(math.log(rate*100.0, 2)))
-    if(base < -1):
-        base = -1
+min_bucket = -2;
+base = 1.7
 
-    return base
+def get_bucket(rate):
+    """ The clustering system, which determines the categories into which each search term is sorted """  
+    global base, min_bucket
+
+    if(rate==0):
+        return min_bucket
+
+    bucket = int(math.floor(math.log(rate*100.0, base)))
+    if(bucket < min_bucket):
+        bucket = min_bucket
+
+    return bucket
+
+def get_bucket_names():
+    global base, min_bucket
+    names = []
+    b = min_bucket
+    while(base**(b-1)<100):
+        names.append("{:.2f} to {:.2f}".format(base**(b-1), base**(b)))
+        b+=1
+    return names
 
 
 #Create datasets
@@ -189,9 +205,10 @@ from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier,
 from sklearn.feature_selection import RFE, SelectKBest, f_regression
 from sklearn.grid_search import GridSearchCV
 from sklearn.metrics import classification_report
+from sklearn.decomposition import PCA
 
 #----Optional debugging imports
-#import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
 #from sklearn.externals import joblib
 
 
@@ -199,8 +216,8 @@ from sklearn.metrics import classification_report
 classifier_list = []
 
 #---CLASSIFERS
-svc_rbf = svm.SVC(C=2e3, gamma=0.1)            #Gauss SVC
-classifier_list.append(svc_rbf)                #Good one
+svc_rbf = svm.SVC(C=1000, gamma=0.01, probability=True)          #Gauss SVC
+#classifier_list.append(svc_rbf)                #Good one
 
 #classifier_list.append(neighbors.KNeighborsClassifier(10))
 #classifier_list.append(AdaBoostClassifier(n_estimators=100))
@@ -215,19 +232,16 @@ classifier_list.append(svc_rbf)                #Good one
 #classifier_list.append(linear_model.SGDRegressor(learning_rate='constant', eta0=0.1))
 
 #----COMBINATIONS
-svc_lin = svm.SVC(kernel='linear')            #Linear SVC
-p1 = Pipeline([
-  ('feature_selection', LinearSVC(penalty="l2", dual=False)),
-  ('classification', svc_lin)
-])
+classifier_list.append(Pipeline([('reduce_dim', PCA()), ('svm', svc_rbf)]))
+#svc_lin = svm.SVC(kernel='linear')            #Linear SVC
 #classifier_list.append(RFE(estimator=svc_lin, n_features_to_select=1, step=1))
 #classifier_list.append(p1)
 
 
 
 #----CONSTANTS
-n = 1000            #Number of data points to train on
-v = 6000            #number of data points to validate w/
+n = 8000            #Number of data points to train on
+v = 3000            #number of data points to validate w/
 
 k_folding = False   #Whether or not cross-validation will be run
 folds = 6           #If so, run with this many data folds
@@ -235,7 +249,7 @@ folds = 6           #If so, run with this many data folds
 def run_model_list(classifier_list, to_train, to_target, n, v, k_folding, folds):
     """ Trains all models in the classifier list with the data provided """    
     
-    verbose = True      #Whether or not to print out all the data
+    verbose = False      #Whether or not to print out all the data
 
     print("Training and testing models")
 
@@ -255,19 +269,29 @@ def run_model_list(classifier_list, to_train, to_target, n, v, k_folding, folds)
             print("Modelling time: {}s".format(modelled-start))
 
             print("Running data prediction")
-            predicted_data = clf.predict(to_train[n+1: n+v+1])            
+            predicted_data = clf.predict(to_train[n+1: n+v+1])
+            pred_av = np.mean([predicted_data[j] for j in range(len(predicted_data))], axis = 0)
+            #plt.plot(pred_av)
+
+            report = classification_report(to_target[n+1: n+v+1],predicted_data, target_names=get_bucket_names())
+
             if(verbose):
                 for i in range(v):
-                    print("{:.3f} - {:.3f}".format(to_target[n+1+i], predicted_data[i]))   
+                    plt.plot(predicted_data[i] - pred_av)
+                    print("{:.3f} - {}".format(to_target[n+1+i], predicted_data[i]))
+                plt.show()
         
 
-            R2 = clf.score(to_train[n+1+o: n+v+1], to_target[n+1: n+v+1])        
+            R2 = clf.score(to_train[n+1: n+v+1], to_target[n+1: n+v+1])
             print("Official R squared: {} -- {}\n".format(R2,type(clf)))
+            print(report)
             print("Prediction time: {}s".format(time.clock() - modelled))
 
 
 def grid_search(to_target, to_train):
     """ Exhaustive grid search to find optimal parameters for SVC """
+    global n
+
     # Set the parameters by cross-validation
     tuned_parameters = [{'kernel': ['rbf'], 'gamma': [1e-3, 1e-4],
                          'C': [1, 10, 100, 1000]},
@@ -296,3 +320,4 @@ def grid_search(to_target, to_train):
 #Runs when the file is run
 if(__name__ == "__main__"):
     run_model_list(classifier_list, to_train, to_target, n, v, k_folding, folds)
+    #grid_search(to_target, to_train)

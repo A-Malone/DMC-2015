@@ -1,12 +1,43 @@
+#------------------------------------------------------------------------------
+#----TORONTONENSIS
+#----Aidan Malone, Jannis Mei, Justin Chiao, Justin Leung
+#------------------------------------------------------------------------------
+
+#------------------------------------------------------------------------------
+#----DESCRIPTION:
+# A Support Vector Machine that classifies keyword searches by conversion rate,
+# returning the estimated conversion rate of the keyword search.
+#
+# Parameters for the support vector machine are chose through an exhaustive 
+# grid search machine learning algorithm.
+#
+# This is implemented in python using the Scikit-learn, an open-source machine 
+# learning package. It requires numpy, and scipy, all of which can be acquired
+# using the python pip utility.
+
+#------------------------------------------------------------------------------
+#----RESULTS:
+# Tentative results suggest a correlation coefficient R^2 of ~0.89 of the
+# conversion rate.
+#------------------------------------------------------------------------------
+
+
+
+#------------------------------------------------------------------------------
+#------------------------------PARSE DATA--------------------------------------
+#------------------------------------------------------------------------------
+
+#----Basic imports
 import numpy as np
 import csv
+import time
+import math
 
+#The file from which the data is to be loaded
 file_name  = "../Data/SEM_DAILY_BUILD.csv"
 
-#USEFUL_VARS = ["TOTAL_QUALITY_SCORE"]
 
 dic = {}
-kw_cvr_dic = {}
 counter = 0
 
 non_kw_dimensions = 7
@@ -28,13 +59,14 @@ def get_non_kw_data(d):
     return a
 
 def get_conversion_ratio(row):
+    """Returns average conversion rate"""
     try:
         return int(row["APPLICATIONS"])/float(row["CLICKS"])
     except:
         return 0.0
 
 def chi_squared(m, y, v):
-    #Make my own R2
+    """My own R^2 check"""
     y_var = np.var(y)
     t = 0
     for i in range(v):        
@@ -73,36 +105,33 @@ for row in input_file:
         try:
             a = dic[int(i[2:])]            
         except:
-            dic[int(i[2:])] = kw_counter
-            kw_cvr_dic[int(i[2:])] = cvr
+            dic[int(i[2:])] = kw_counter            
             kw_counter += 1
 
-#input_file.close()
 
 print("Done pre-test: {} kws , {} clickthroughs , {} lines".format(kw_counter , click_line_count, line_count))
 
 
 #------------------------------------------------------------------------------
-#------------------------------------------------------------------------------
-#----DATA GATHERING
-#------------------------------------------------------------------------------
+#-------------------------------LOAD DATA--------------------------------------
 #------------------------------------------------------------------------------
 def get_bucket(rate):
+    """ The clustering system, which determines the categories into which each search term is sorted """ 
     buckets = 20
-    return int(round(rate*buckets))
+    base = int(math.floor(math.log(rate*100.0, 2)))
+    if(base < -1):
+        base = -1
+
+    return base
 
 
-#Create data storage
+#Create datasets
 search_data = np.zeros((click_line_count+1, kw_counter+non_kw_dimensions))
 search_data_u = np.zeros((click_line_count+1, non_kw_dimensions+1))
 search_target_r = np.zeros(click_line_count+1)
 search_target_c = np.zeros(click_line_count+1)
 
-
-#keys = sorted(dic, key=dic.get)
-#for kw in keys:
-#    print("{} : {}".format(kw, dic[kw]))
-
+#Open data file for reading
 input_file = csv.DictReader(open(file_name, "r"))
 useful_row_counter = 0
 
@@ -112,7 +141,7 @@ for ind, row in enumerate(input_file):
         continue
     useful_row_counter += 1
 
-    #---Load the data from the row
+    #---Load non-keyword-data from the row
     udata = get_non_kw_data(row)
 
     for da, udatum in enumerate(udata):
@@ -120,7 +149,7 @@ for ind, row in enumerate(input_file):
         search_data_u[useful_row_counter][da] = udatum
 
    
-    #Keyword_data
+    #----Load keyword data
     txt = row["KEYWD_TXT"]
     kws = txt.split("+")
     for kw in kws:
@@ -142,18 +171,15 @@ from sklearn import preprocessing
 search_data_scaled =  preprocessing.scale(search_data)
 search_data_u_scaled =  preprocessing.scale(search_data_u)
 
-#----CHOSEN_DATA_SET
+#----CHOOSE DATA SET
 to_train = search_data_scaled
 to_target = search_target_c
 
-
 #------------------------------------------------------------------------------
-#------------------------------------------------------------------------------
-#----MODEL IMPLEMETATION
-#------------------------------------------------------------------------------
+#---------------------------MODEL IMPLEMENTATION-------------------------------
 #------------------------------------------------------------------------------
 
-
+#----SKlearn imports
 print("Importing SKlearn")
 from sklearn import svm, datasets, feature_selection, cross_validation, linear_model, neighbors
 from sklearn.pipeline import Pipeline
@@ -164,8 +190,10 @@ from sklearn.feature_selection import RFE, SelectKBest, f_regression
 from sklearn.grid_search import GridSearchCV
 from sklearn.metrics import classification_report
 
+#----Optional debugging imports
 #import matplotlib.pyplot as plt
 #from sklearn.externals import joblib
+
 
 #Set up a list of classifiers such that they can be run in succession
 classifier_list = []
@@ -173,12 +201,6 @@ classifier_list = []
 #---CLASSIFERS
 svc_rbf = svm.SVC(C=2e3, gamma=0.1)            #Gauss SVC
 classifier_list.append(svc_rbf)                #Good one
-
-#Add multiple classifers
-#for c in range(5):
-#    for y in range(-3,1):
-#        classifier_list.append(svm.SVC(C=10**c, gamma=10**y))
-
 
 #classifier_list.append(neighbors.KNeighborsClassifier(10))
 #classifier_list.append(AdaBoostClassifier(n_estimators=100))
@@ -193,7 +215,7 @@ classifier_list.append(svc_rbf)                #Good one
 #classifier_list.append(linear_model.SGDRegressor(learning_rate='constant', eta0=0.1))
 
 #----COMBINATIONS
-svc_lin = svm.SVC(kernel='linear')            #Gauss SVC
+svc_lin = svm.SVC(kernel='linear')            #Linear SVC
 p1 = Pipeline([
   ('feature_selection', LinearSVC(penalty="l2", dual=False)),
   ('classification', svc_lin)
@@ -202,55 +224,50 @@ p1 = Pipeline([
 #classifier_list.append(p1)
 
 
-#------------------------------------------------------------------------------
+
 #----CONSTANTS
+n = 1000            #Number of data points to train on
+v = 6000            #number of data points to validate w/
 
-n = 1000     #Number of data points to train on
-v = 6000     #number of data points to validate w/
-k_folding = False
-folds = 6
+k_folding = False   #Whether or not cross-validation will be run
+folds = 6           #If so, run with this many data folds
 
-def run_model_list(to_train, to_target, classifier_list, n, v, k_folding, folds):  
+def run_model_list(classifier_list, to_train, to_target, n, v, k_folding, folds):
+    """ Trains all models in the classifier list with the data provided """    
     
-    o = 0
-    verbose = True
-
-
-    import time
+    verbose = True      #Whether or not to print out all the data
 
     print("Training and testing models")
 
     for clf in classifier_list:
 
-        print("Running {}\n".format(type(clf)))    
-
-        #----VALIDATION
-        #Cross-reference
-        if(k_folding):
+        #Which type of classifier is running
+        print("Running {}\n".format(type(clf)))        
+        
+        if(k_folding):      #K-FOLDING
             print("Running K-Folding: {} folds on {} rows".format(folds, n))
-            this_scores = cross_validation.cross_val_score(clf, to_train[o:n+o], to_target[o:n+o], n_jobs=-1, cv=folds)
+            this_scores = cross_validation.cross_val_score(clf, to_train[:n], to_target[:n], n_jobs=-1, cv=folds)
             print("k_folding results: {}\n".format(this_scores))
-        else:
-            #----TRAINING
+        else:               #LINEAR TRAINING            
             start = time.clock()
-            a = clf.fit(to_train[o:n+o], to_target[o:n+o])
+            a = clf.fit(to_train[:n], to_target[:n])
             modelled = time.clock()
             print("Modelling time: {}s".format(modelled-start))
 
             print("Running data prediction")
-            predicted_data = clf.predict(to_train[n+1+o: n+v+1+o])
-            #filtered_data = np.array([x if x>0.11 else 0.04 for x in predicted_data.tolist()])
+            predicted_data = clf.predict(to_train[n+1: n+v+1])            
             if(verbose):
                 for i in range(v):
-                    print("{:.3f} - {:.3f}".format(to_target[n+1+i+o], predicted_data[i]))   
+                    print("{:.3f} - {:.3f}".format(to_target[n+1+i], predicted_data[i]))   
         
 
-            R2 = clf.score(to_train[n+1+o: n+v+1+o], to_target[n+1+o: n+v+1+o])        
-            print("Original R squared: {} -- {}\n".format(R2,type(clf)))
-            print("\nPrediction time: {}s".format(time.clock() - modelled))
+            R2 = clf.score(to_train[n+1+o: n+v+1], to_target[n+1: n+v+1])        
+            print("Official R squared: {} -- {}\n".format(R2,type(clf)))
+            print("Prediction time: {}s".format(time.clock() - modelled))
 
 
 def grid_search(to_target, to_train):
+    """ Exhaustive grid search to find optimal parameters for SVC """
     # Set the parameters by cross-validation
     tuned_parameters = [{'kernel': ['rbf'], 'gamma': [1e-3, 1e-4],
                          'C': [1, 10, 100, 1000]},
@@ -276,4 +293,6 @@ def grid_search(to_target, to_train):
                   % (mean_score, scores.std() / 2, params))
         print()
 
+#Runs when the file is run
 if(__name__ == "__main__"):
+    run_model_list(classifier_list, to_train, to_target, n, v, k_folding, folds)

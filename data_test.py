@@ -21,11 +21,22 @@
 # conversion rate.
 #------------------------------------------------------------------------------
 
+#------------------------------------------------------------------------------
+#----INSTRUCTIONS:
+#   1) Install dependancies: pip install numpy scipy scikit-learn
+#       Note: matplotlib can also be used in debugging, but is not necessary
+#   2) Run this file using: python data_test.py
+#       Note: Do not change the relative locations of any files in the
+#               directory, they are all reference relatively.
+#   3) Results will be written to data_out.csv, in the same folder as this file
+#------------------------------------------------------------------------------
+
 #----Basic imports
 import numpy as np
 import csv
 import time
 import math
+import pickle
 #import matplotlib.pyplot as plt
 
 #----SKlearn imports
@@ -49,21 +60,26 @@ from sklearn.externals import joblib
 class CVR_Model(object):
     """ The model that produces models for the convergence """
 
-    #----Classifiers
-    classifier_list = []
-
-    #----Datasets
-    search_data = None         #Complete training data    
-    search_data_scaled = None
-    
-    search_data_u = None       #Continuous training data
-    search_data_u_scaled = None
-
-    search_target_r = None     #Regression target data
-    search_target_c = None     #Classification target data
-
     def __init__(self):
         super(CVR_Model, self).__init__()        
+        #----Classifiers
+        self.classifier_list = []
+
+        #----Datasets
+        self.search_data = None         #Complete training data    
+        self.search_data_scaled = None
+        
+        self.search_data_u = None       #Continuous training data
+        self.search_data_u_scaled = None
+
+        self.search_target_r = None     #Regression target data
+        self.search_target_c = None     #Classification target data
+
+        self.kw_dict = {}    
+        self.non_kw_dimensions = 8
+
+        self.min_bucket = -2
+        self.base = 1.7
 
     #------------------------------------------------------------------------------
     #----------------------------MODEL BUILDING------------------------------------
@@ -76,8 +92,8 @@ class CVR_Model(object):
         self.load_data(file_name)
 
         #----CONSTANTS
-        n = 1000               #Number of data points to train on
-        v = 3000               #number of data points to validate w/
+        n = 15000               #Number of data points to train on
+        v = 1000               #number of data points to validate w/
 
         self.train_model(self.search_data_scaled[:n], self.search_target_c[:n])
 
@@ -191,9 +207,7 @@ class CVR_Model(object):
 
 
     #----DATA LOADING
-    #------------------------------------------------------------------------------
-    kw_dict = {}    
-    non_kw_dimensions = 8
+    #------------------------------------------------------------------------------    
 
     def load_data(self, file_name):
         line_count = 0
@@ -271,9 +285,7 @@ class CVR_Model(object):
         self.search_data_u_scaled =  preprocessing.scale(self.search_data_u)        
 
     #----BUCKETING
-    #------------------------------------------------------------------------------
-    min_bucket = -2
-    base = 1.7
+    #------------------------------------------------------------------------------    
     def get_bucket(self, rate):
         """ The clustering system, which determines the categories into which each search term is sorted """          
 
@@ -293,6 +305,13 @@ class CVR_Model(object):
             names.append("{:.2f} to {:.2f}".format(self.base**(b-1), self.base**(b)))
             b+=1
         return names
+
+    def get_cvr_from_bucket(self, b):
+        if(b == self.min_bucket):
+            return 0            
+        avg_cvr = (self.base**(b-1) + self.base**(b))/200.0
+        return avg_cvr
+
 
     #----DATA EXTRACTION
     #------------------------------------------------------------------------------
@@ -328,22 +347,179 @@ class CVR_Model(object):
     #---------------------------MODEL APPLICATION-----------------------------------
     #------------------------------------------------------------------------------
     def run_model(self, data_file):
+        self.load_validation_data(data_file)
+
+        n_class = float(len(self.classifier_list))
+        
+        to_analyze = self.search_data_scaled
+
+        predicted = np.zeros(len(to_analyze))
+
+        for clf in self.classifier_list:        
+            np.add(predicted, clf.predict(to_analyze))
+
+        #predicted = self.classifier_list[0].predict(to_analyze)
+        predicted /= n_class
+
+        print("predicted outcomes for {} rows".format(len(predicted)))
+
+        max_bids = np.zeros(len(predicted))
+        
+        #----Data is alligned properly
+        input_file = csv.DictReader(open(data_file, "r"))
+        for i,row in enumerate(input_file):            
+            max_bids[i] = self.get_max_bid(row, self.get_cvr_from_bucket(predicted[i]))
+
+        N = len(predicted)        
+        out_file = open('data_out.csv', 'w')
+        with open(data_file, 'rb') as in_file:
+            for i in range(N):                
+                if(i==0):                    
+                    out_file.write("{},CR_PRED,BE_BID\n".format(in_file.readline().strip("\n")))
+                    continue
+                out_file.write("{},{:.4f},{:.4f}\n".format(in_file.readline().strip("\n"),self.get_cvr_from_bucket(predicted[i]), max_bids[i]))
+                
+
+    def test_model(self, data_file):
+        """ A test to see if a saved model loads properly """
+        self.load_data(data_file)
+        
+        o = 1000               #Number of data points to offset
+        v = 3000               #number of data points to validate w/
+        self.classification_report(self.search_data_scaled[o+1:o+v+1], self.search_target_c[o+1:o+v+1], False)
+
+    def load_validation_data(self, file_name):        
+        line_count = 0
+        visit_line_count = 0        
+        counter = 0
+        kw_counter = len(self.kw_dict.keys())
+
+        input_file = csv.DictReader(open(file_name, "r"))
+        for row in input_file:
+            
+            line_count += 1                         #Count lines
+
+            if(row["VISITS"] != "" and int(row["VISITS"]) != 0):            #Skip if no clicks
+                visit_line_count += 1
+            else:
+                continue
+
+        #Create datasets
+        self.search_data = np.zeros((visit_line_count+1, kw_counter+self.non_kw_dimensions))
+        self.search_data_u = np.zeros((visit_line_count+1, self.non_kw_dimensions+1))       
+
+        #Reopen data file for reading
+        input_file = csv.DictReader(open(file_name, "r"))
+        useful_row_counter = 0
+
+        #----Load in the actual data
+        for ind, row in enumerate(input_file):
+            if(row["VISITS"] == "" or int(row["VISITS"]) == 0):
+                continue
+
+            useful_row_counter += 1
+
+            #---Load non-keyword-data from the row
+            udata = self.get_non_kw_data(row)
+
+            for da, udatum in enumerate(udata):
+                self.search_data[useful_row_counter][kw_counter + da] = udatum
+                self.search_data_u[useful_row_counter][da] = udatum
+           
+            #----Load keyword data
+            txt = row["KEYWD_TXT"]
+            kws = txt.split("+")
+            for kw in kws:
+                if(kw == ""):
+                    continue
+                key_word_id = int(kw[2:])
+                if (key_word_id in self.kw_dict.keys()):
+                    kw_index = self.kw_dict[key_word_id]
+                    self.search_data[useful_row_counter][kw_index] = 1
+
+        print("Done loading validation data : {}".format(self.search_data.shape))
+
+        #----DATA NORMALIZATION        
+        self.search_data_scaled =  preprocessing.scale(self.search_data)
+        self.search_data_u_scaled =  preprocessing.scale(self.search_data_u)
+
+    def get_max_bid(self, data, CVR):
+        eng_g  = 719.6311656
+        eng_y  = 517.2124627
+        dev_d  = 750.0786351
+        dev_m  = 600.0031169
+        dev_t  = 554.17944
+        lang_e = 746.2284083
+        lang_f = 448.3667568
+        lang2  = 720.3435569
+        lang3  = 310.4385294
+        type_b = 464.1673714
+        type_e = 922.6565655
+
+        # take the array of avg rev and multiply and shit.        
+        avg_rev = 0.0           #an array of length kewywd id
+        
+        
+        if (data["ENGN_ID"] == 'G'):
+            avg_rev += eng_g;
+        else:
+            avg_rev += eng_y;
+
+        if (data["DVIC_ID"] == 'D'):
+            avg_rev += dev_d;
+        elif (data["DVIC_ID"] == 'M'):
+            avg_rev += dev_m;
+        else:
+            avg_rev += dev_t;
+
+        if (data["LANG_ID"] == 'E'):
+            avg_rev += lang_e;
+        else:
+            avg_rev += lang_f;
+
+        if ('LANG2' in data["AD_GRP_NM"]):
+            avg_rev += lang2;
+        elif ('LANG3' in data["AD_GRP_NM"]):
+            avg_rev += lang3;
+
+        if (data["MTCH_TYPE_ID"] == 'B'):
+            avg_rev += type_b;
+        else:
+            avg_rev += type_e;
+
+        return avg_rev/5 * CVR * 0.4;
+
+
+    def save_validation_data(self, out_file):
         pass
 
     #------------------------------------------------------------------------------
     #-------------------------------MODEL I/O--------------------------------------
-    #------------------------------------------------------------------------------
-    def save_model(self, outfiles):        
-        for i,n in enumerate(infiles):
-            joblib.dump(self.classifier_list[i], n)
+    #------------------------------------------------------------------------------  
 
-    def load_model(self, infiles):
-        for n in infiles:
-            classifier_list.append(joblib.load(n))
+    def save_model(self, model_root):
+        with open(model_root+"kw_dict.pkl", 'w') as f:
+            pickle.dump(self.kw_dict, f)
+        with open(model_root+"model_codes.pkl", 'w') as f:
+            pickle.dump(len(self.classifier_list), f)
 
+        for i, n in enumerate(self.classifier_list):
+            file_name = model_root + "classifer{}.pkl".format(i)
+            print("Saving {} to {}".format(type(self.classifier_list[i]), file_name))
+            joblib.dump(self.classifier_list[i], file_name)
 
-#The file from which the data is to be loaded
-file_name  = "../Data/SEM_DAILY_BUILD.csv"
+    def load_model(self, model_root):
+        l_list = 0
+        with open(model_root+"kw_dict.pkl", 'r') as f:
+            self.kw_dict = pickle.load(f)
+        with open(model_root+"model_codes.pkl", 'r') as f:
+            l_list = pickle.load(f)
+
+        for i in range(l_list):
+            file_name = model_root + "classifer{}.pkl".format(i)
+            print("Loading from {}".format(file_name))
+            self.classifier_list.append(joblib.load(file_name))
+
 
 def chi_squared(m, y, v):
     """My own R^2 check"""
@@ -353,8 +529,29 @@ def chi_squared(m, y, v):
         t += (y[i] - m[i])**2
     return 1 - t / y_var / v
 
+def pickle_model(model, outfile):
+    model.wipe_data()    
+    with open(outfile, 'w') as f:
+        pickle.dump(model, f)
+
+def unpickle_model(infile):
+    with open(infile, 'r') as f:
+        return pickle.load(f)
+
 
 #Runs when the file is run
 if(__name__ == "__main__"):
+    #The file from which the data is to be loaded
+    in_file  = "../Data/SEM_DAILY_BUILD.csv"
+    model_root = "./models/mt/"
+    validation_file = "../Data/PURGED_VALIDATION_DATA.csv"
+
     model = CVR_Model()
-    model.build_model(file_name)
+    model.build_model(in_file)
+    model.save_model(model_root)
+
+    #print("\nMode 2\n")
+    
+    #model2 = CVR_Model()
+    #model2.load_model(model_root)
+    #model2.run_model(validation_file)

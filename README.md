@@ -23,9 +23,9 @@ conversion rate.
 Instructions:
 ------------
 1. Install dependancies: pip install numpy scipy scikit-learn
-⋅⋅*Note: matplotlib can also be used in debugging, but is not necessary
+⋅⋅* Note: matplotlib can also be used in debugging, but is not necessary
 2. Run this file using: python data_test.py
-⋅⋅*Note: Do not change the relative locations of any files in the directory, they are all reference relatively.
+⋅⋅* Note: Do not change the relative locations of any files in the directory, they are all reference relatively.
 3. Results will be written to data_out.csv, in the same folder as this file
 
 

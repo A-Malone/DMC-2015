@@ -63,14 +63,14 @@ class CVR_Model(object):
     search_target_c = None     #Classification target data
 
     def __init__(self):
-        super(CVR_Model, self).__init__()
-        self.init_esitmators()      #Setup the estimators
+        super(CVR_Model, self).__init__()        
 
     #------------------------------------------------------------------------------
     #----------------------------MODEL BUILDING------------------------------------
     #------------------------------------------------------------------------------    
 
     def build_model(self, file_name):
+        self.init_esitmators()      #Setup the estimators
 
         #Load in data
         self.load_data(file_name)
@@ -91,7 +91,7 @@ class CVR_Model(object):
     def train_model(self, to_train, to_target):
         """ Trains all models in the classifier list with the data provided """    
 
-        print("Training and testing models")       
+        print("Training and testing models")
 
         for clf in self.classifier_list:
             #Which type of classifier is running
@@ -329,8 +329,17 @@ class CVR_Model(object):
     #------------------------------------------------------------------------------
     def run_model(self, data_file):
         pass
-        
 
+    #------------------------------------------------------------------------------
+    #-------------------------------MODEL I/O--------------------------------------
+    #------------------------------------------------------------------------------
+    def save_model(self, outfiles):        
+        for i,n in enumerate(infiles):
+            joblib.dump(self.classifier_list[i], n)
+
+    def load_model(self, infiles):
+        for n in infiles:
+            classifier_list.append(joblib.load(n))
 
 
 #The file from which the data is to be loaded
@@ -348,5 +357,4 @@ def chi_squared(m, y, v):
 #Runs when the file is run
 if(__name__ == "__main__"):
     model = CVR_Model()
-    model.build_model(file_name)    
-
+    model.build_model(file_name)

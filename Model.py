@@ -1,4 +1,4 @@
-#------------------------------------------------------------------------------
+                        #------------------------------------------------------------------------------
 #----TORONTONENSIS
 #----Aidan Malone, Jannis Mei, Justin Chiao, Justin Leung
 #------------------------------------------------------------------------------
@@ -29,6 +29,13 @@
 #       Note: Do not change the relative locations of any files in the
 #               directory, they are all reference relatively.
 #   3) Results will be written to data_out.csv, in the same folder as this file
+#------------------------------------------------------------------------------
+
+#------------------------------------------------------------------------------
+#----TODO/WISHLIST:
+#   1) Weighting inputs based on number of impressions
+#   2) Better parameter search
+#   3) Try different dimensionality reduction algorithms (Kernel_PCA)
 #------------------------------------------------------------------------------
 
 #----Basic imports
@@ -308,7 +315,7 @@ class CVR_Model(object):
 
     def get_cvr_from_bucket(self, b):
         if(b == self.min_bucket):
-            return 0            
+            return 0.013        #Sourced from the average conversion factor            
         avg_cvr = (self.base**(b-1) + self.base**(b))/200.0
         return avg_cvr
 
@@ -355,13 +362,13 @@ class CVR_Model(object):
 
         predicted = np.zeros(len(to_analyze))
 
-        for clf in self.classifier_list:        
-            np.add(predicted, clf.predict(to_analyze))
+        #for clf in self.classifier_list:        
+        #    np.add(predicted, clf.predict(to_analyze))
 
-        #predicted = self.classifier_list[0].predict(to_analyze)
-        predicted /= n_class
+        predicted = self.classifier_list[0].predict(to_analyze)
+        #predicted /= n_class
 
-        print("predicted outcomes for {} rows".format(len(predicted)))
+        print("Predicted outcomes for {} rows".format(len(predicted)))
 
         max_bids = np.zeros(len(predicted))
         
@@ -541,17 +548,51 @@ def unpickle_model(infile):
 
 #Runs when the file is run
 if(__name__ == "__main__"):
-    #The file from which the data is to be loaded
+    #The files from which the data is to be loaded
     in_file  = "../Data/SEM_DAILY_BUILD.csv"
     model_root = "./models/mt/"
-    validation_file = "../Data/PURGED_VALIDATION_DATA.csv"
+    validation_file = "./DATASET.csv"
 
-    model = CVR_Model()
-    model.build_model(in_file)
-    model.save_model(model_root)
+    #model = CVR_Model()
+    #model.build_model(in_file)
+    #model.save_model(model_root)
 
     #print("\nMode 2\n")
     
-    #model2 = CVR_Model()
-    #model2.load_model(model_root)
-    #model2.run_model(validation_file)
+    model_val = CVR_Model()
+    model_val.load_model(model_root)
+    model_val.run_model(validation_file)
+
+#------------------------------------------------------------------------------
+#  
+#                                               .,,:;;;;:,.`          
+#                                     `,'''''''''''';;;;;:::,,..      
+#                               ,''''''';:::::;''''';;;;;:::,,,..     
+#                         ,'':.                      ;;;;;:::,,..`    
+#                    ,;.                               ;;;:::,,,..    
+#                                                       ;;;:::,,.'    
+#                                                        ;;:::,,''    
+#                                                        ;;;:::;'     
+#                                                       ;;;;::''      
+#                                                       ;;;;;';       
+#     :'''''                `''  `,         ;''   ,; ,' ';;;'         
+#   `'''';;'                 ;, ,''         '''  '.    ' ;';          
+#   '''`     '''''' ''''''' '''''''' '''''' ''' ;'     ','          ``
+#  :'''      .   '' '''`,''.''' ''' ,`  .'' '': '      '''' :', `: '  
+#  ''''     `:;'''' ''.  '','': ''; `:''''' '' `'      '',,' ' `'  '  
+#  .''':``..''. ;'' ''; ;'' ''  ''.'''` ''','' ,'      '`';  ' '  '`  
+#   :'''''':'''''''.'''''':,'' .'' '''''''''''  '     .' '   ' ',     
+#     `,:,. `.. ...;'' ..  ... `..  ..` ......,`'.    '` '  ::.'      
+#                  '''                       '': '.`.'  `'  '; ':,:   
+#                                          ,':    ``            `     
+#                                        `':                          
+#                                       ;,                            
+#                                     ..     
+#------------------------------------------------------------------------------
+
+# Thanks for reading through out code! All things considered, I think it all
+# worked well for a weekend's exploration of machine learning, and I'm glad 
+# to have had the oppourtunity to work on the problem.
+#
+#   Cheers,
+#       Aidan Malone, Jannis Mei, Justin Chiao, Justin Leung

@@ -1,6 +1,8 @@
-                        #------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
 #----TORONTONENSIS
 #----Aidan Malone, Jannis Mei, Justin Chiao, Justin Leung
+#
+#----Github: https://github.com/A-Malone/DMC-2015
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
@@ -315,7 +317,7 @@ class CVR_Model(object):
 
     def get_cvr_from_bucket(self, b):
         if(b == self.min_bucket):
-            return 0.013        #Sourced from the average conversion factor            
+            return 0.023        #Sourced from the average conversion factor            
         avg_cvr = (self.base**(b-1) + self.base**(b))/200.0
         return avg_cvr
 
@@ -451,33 +453,15 @@ class CVR_Model(object):
         self.search_data_u_scaled =  preprocessing.scale(self.search_data_u)
 
     def get_max_bid(self, data, CVR):
-        eng_g  = 719.6311656
-        eng_y  = 517.2124627
-        dev_d  = 750.0786351
-        dev_m  = 600.0031169
-        dev_t  = 554.17944
-        lang_e = 746.2284083
-        lang_f = 448.3667568
-        lang2  = 720.3435569
-        lang3  = 310.4385294
-        type_b = 464.1673714
-        type_e = 922.6565655
+        lang_e = 423.75
+        lang_f = 313.47
+        lang2  = 411.49
+        lang3  = 301.22
+        type_b = 409.06
+        type_e = 399.67
 
         # take the array of avg rev and multiply and shit.        
-        avg_rev = 0.0           #an array of length kewywd id
-        
-        
-        if (data["ENGN_ID"] == 'G'):
-            avg_rev += eng_g;
-        else:
-            avg_rev += eng_y;
-
-        if (data["DVIC_ID"] == 'D'):
-            avg_rev += dev_d;
-        elif (data["DVIC_ID"] == 'M'):
-            avg_rev += dev_m;
-        else:
-            avg_rev += dev_t;
+        avg_rev = 404.36           #an array of length kewywd id        
 
         if (data["LANG_ID"] == 'E'):
             avg_rev += lang_e;
@@ -494,7 +478,7 @@ class CVR_Model(object):
         else:
             avg_rev += type_e;
 
-        return avg_rev/5 * CVR * 0.4;
+        return avg_rev/4 * CVR * 0.4
 
 
     def save_validation_data(self, out_file):
@@ -553,15 +537,21 @@ if(__name__ == "__main__"):
     model_root = "./models/mt/"
     validation_file = "./DATASET.csv"
 
+    #----Model Building
     #model = CVR_Model()
     #model.build_model(in_file)
-    #model.save_model(model_root)
+    #model.save_model(model_root)    
 
-    #print("\nMode 2\n")
-    
+    #----Model validation
     model_val = CVR_Model()
     model_val.load_model(model_root)
     model_val.run_model(validation_file)
+    
+    #---Model evaluation
+    #model_eval = CVR_Model()
+    #model_eval.load_data(in_file)
+    #model_eval.load_model(model_root)
+    #model_eval.classification_report(model_eval.search_data_scaled[15000:], model_eval.search_target_c[15000:], False)
 
 #------------------------------------------------------------------------------
 #  

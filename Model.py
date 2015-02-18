@@ -95,18 +95,25 @@ class CVR_Model(object):
     #------------------------------------------------------------------------------    
 
     def build_model(self, file_name):
+        print("Building models")
+
         self.init_esitmators()      #Setup the estimators
 
         #Load in data
-        self.load_data(file_name)
+        self.load_data(file_name, True)
 
         #----CONSTANTS
         n = 15000               #Number of data points to train on
         v = 1000               #number of data points to validate w/
+        t = 0.2
+        v = 0.5
 
-        self.train_model(self.search_data_scaled[:n], self.search_target_c[:n])
+        train_d, train_t, val_d, val_t = self.get_random_sets(self.search_data_scaled, self.search_target_c, t, v)
+        self.train_model(train_d, train_t)
+        self.classification_report(val_d, val_t, False)
 
-        self.classification_report(self.search_data_scaled[n+1:n+v+1], self.search_target_c[n+1:n+v+1], False)
+        #self.train_model(self.search_data_scaled[:n], self.search_target_c[:n])
+        #self.classification_report(self.search_data_scaled[n+1:n+v+1], self.search_target_c[n+1:n+v+1], False)
 
         #k_folding = False       #Whether or not cross-validation will be run
         #folds = 6               #If so, run with this many data folds
@@ -124,7 +131,38 @@ class CVR_Model(object):
             print("Running {}".format(type(clf)))
             clf.fit(to_train,to_target)
             print("Trained {} in {}s\n".format(type(clf), time.clock() - start))
-            
+
+    #------------------------------------------------------------------------------
+    def get_random_sets(self, data, target, t, v):
+        r_vals = np.random.random_sample((len(data),))
+
+        train_data = np.zeros((len(data), data.shape[1]))
+        train_target = np.zeros(len(data))
+        
+        val_data = np.zeros((len(data), data.shape[1]))
+        val_target = np.zeros(len(data))
+
+        c_train = 0
+        c_val = 0
+        
+        for i in range(len(data)):
+            if(r_vals[i] < t):
+                train_data[c_train] = data[i]
+                train_target[c_train] = target[i]
+                c_train += 1
+            elif(r_vals[i] < t + v):
+                val_data[c_val] = data[i]
+                val_target[c_val] = target[i]
+                c_val += 1
+
+        train_data.resize((c_train, data.shape[1]))
+        train_target.resize(c_train)
+
+        val_data.resize((c_val, data.shape[1]))
+        val_target.resize(c_val)
+        
+        return (train_data, train_target, val_data, val_target)
+
     
     #----MODEL EVALUATION
     #------------------------------------------------------------------------------    
@@ -218,7 +256,7 @@ class CVR_Model(object):
     #----DATA LOADING
     #------------------------------------------------------------------------------    
 
-    def load_data(self, file_name):
+    def load_data(self, file_name, pos_cvr=False):
         line_count = 0
         click_line_count = 0
         kw_counter = 0
@@ -229,10 +267,13 @@ class CVR_Model(object):
             
             line_count += 1                     #Count lines
 
+            if(pos_cvr and row["APPLICATIONS"] == ""):
+                continue
+
             if(int(row["CLICKS"]) != 0):         #Skip if no clicks
                 click_line_count += 1
             else:
-                continue           
+                continue
             
             #Count keywords
             txt = row["KEYWD_TXT"]
@@ -247,7 +288,7 @@ class CVR_Model(object):
                     self.kw_dict[int(i[2:])] = kw_counter            
                     kw_counter += 1
 
-        print("Done pre-test: {} kws , {} clickthroughs , {} lines".format(kw_counter , click_line_count, line_count))
+        print("Done pre-test: {} kws , {} useful lines , {} lines".format(kw_counter , click_line_count, line_count))
 
         #Create datasets
         self.search_data = np.zeros((click_line_count+1, kw_counter+self.non_kw_dimensions))
@@ -261,6 +302,10 @@ class CVR_Model(object):
 
         #----Load in the actual data
         for ind, row in enumerate(input_file):
+
+            if(pos_cvr and row["APPLICATIONS"] == ""):
+                continue
+
             if(int(row["CLICKS"]) == 0):
                 continue
             useful_row_counter += 1
@@ -533,19 +578,19 @@ def unpickle_model(infile):
 #Runs when the file is run
 if(__name__ == "__main__"):
     #The files from which the data is to be loaded
-    in_file  = "../Data/SEM_DAILY_BUILD.csv"
-    model_root = "./models/mt/"
+    in_file  = "../Data/SEM_DAILY_BUILD.csv"    
     validation_file = "./DATASET.csv"
+    model_root = "./models/model_test_18/"
 
     #----Model Building
-    #model = CVR_Model()
-    #model.build_model(in_file)
-    #model.save_model(model_root)    
+    model = CVR_Model()
+    model.build_model(in_file)
+    model.save_model(model_root)
 
     #----Model validation
-    model_val = CVR_Model()
-    model_val.load_model(model_root)
-    model_val.run_model(validation_file)
+    #model_val = CVR_Model()
+    #model_val.load_model(model_root)
+    #model_val.run_model(validation_file)
     
     #---Model evaluation
     #model_eval = CVR_Model()

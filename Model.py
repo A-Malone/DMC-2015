@@ -46,6 +46,7 @@ import csv
 import time
 import math
 import pickle
+import scipy
 #import matplotlib.pyplot as plt
 
 #----SKlearn imports
@@ -105,8 +106,8 @@ class CVR_Model(object):
         #----CONSTANTS
         n = 15000               #Number of data points to train on
         v = 1000               #number of data points to validate w/
-        t = 0.2
-        v = 0.5
+        t = 0.9
+        v = 0.1
 
         train_d, train_t, val_d, val_t = self.get_random_sets(self.search_data_scaled, self.search_target_c, t, v)
         self.train_model(train_d, train_t)
@@ -187,11 +188,14 @@ class CVR_Model(object):
                 for i in range(v):
                     #plt.plot(predicted_data[i] - pred_av)
                     print("{:.3f} - {}".format(y[i], predicted_data[i]))
-                #plt.show()
-        
+                #plt.showkt            
+            
+            #P1, Q1, Y1, somerd  = somersd([predicted_data, y])
+            kt = scipy.stats.kendalltau(y, predicted_data)     
 
             R2 = clf.score(X, y)
             print("Official R squared: {} -- {}\n".format(R2,type(clf)))
+            print("Official KT: {} -- {}\n".format(kt,type(clf)))
             print(report)
             print("Prediction time: {}s".format(time.clock() - start))
 

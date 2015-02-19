@@ -100,11 +100,11 @@ class CVR_Model(object):
         self.init_esitmators()      #Setup the estimators
 
         #Load in data
-        self.load_data(file_name, True)
+        self.load_data(file_name, 0.02)
 
         #----CONSTANTS        
-        t = 0.7         #Percentage of data set to train on
-        v = 0.3         #Percentage of data set to test on
+        t = 0.9         #Percentage of data set to train on
+        v = 0.1         #Percentage of data set to test on
 
         train_d, train_t, val_d, val_t = self.get_random_sets(self.search_data_scaled, self.search_target_c, t, v)
         self.train_model(train_d, train_t)
@@ -180,7 +180,7 @@ class CVR_Model(object):
 
             predicted_data = clf.predict(X)
             
-            results_array[index] = predicted_data
+            results_array[index] = [self.get_cvr_from_bucket(x) for x in predicted_data]
             
             R2 = clf.score(X, y)
             print("Model R squared: {} -- {}\n".format(R2,type(clf)))
@@ -193,7 +193,7 @@ class CVR_Model(object):
                     
          
         final_result = np.mean(results_array, axis=0)            
-        print("Total R squared: {}\n".format(r2_score(final_result, y)))        
+        print("Total CVR R squared: {}\n".format(r2_score(final_result, [self.get_cvr_from_bucket(x) for x in y])))        
        
        
         print("Prediction time: {}s".format(time.clock() - start))
@@ -241,8 +241,8 @@ class CVR_Model(object):
         #self.classifier_list.append(svc_rbf)
         #self.classifier_list.append(neighbors.KNeighborsClassifier(10))
         #self.classifier_list.append(AdaBoostClassifier(n_estimators=100))
-        self.classifier_list.append(AdaBoostClassifier(n_estimators=100))
-        self.classifier_list.append(GradientBoostingClassifier(n_estimators=100, learning_rate=1.0, max_depth=1, random_state=0))
+        #self.classifier_list.append(Pipeline([('reduce_dim', PCA()), ('ADA',AdaBoostClassifier(n_estimators=100))]))
+        #self.classifier_list.append(GradientBoostingClassifier(n_estimators=100, learning_rate=1.0, max_depth=1, random_state=0))
         #self.classifier_list.append(RandomForestClassifier(n_estimators=10))
 
         #----REGRESSORS
@@ -260,25 +260,32 @@ class CVR_Model(object):
     #----DATA LOADING
     #------------------------------------------------------------------------------    
 
-    def load_data(self, file_name, pos_cvr=False):
+    def load_data(self, file_name, pos_cvr=0.1):
         line_count = 0
-        click_line_count = 0
+        useful_total = 0
         kw_counter = 0
         counter = 0
 
         #Generate a new random  number for every element, append to array
         #   Use the same array again
 
+        zeros_p = []
+
         input_file = csv.DictReader(open(file_name, "r"))
         for row in input_file:
             
             line_count += 1                     #Count lines
 
-            if(pos_cvr and row["APPLICATIONS"] == ""):
-                continue
+            if(row["APPLICATIONS"] == ""):
+                if(not pos_cvr):
+                    continue
+                r_val = np.random.rand()
+                zeros_p.append(r_val)                
+                if(pos_cvr < r_val):                    
+                    continue
 
             if(int(row["CLICKS"]) != 0):         #Skip if no clicks
-                click_line_count += 1
+                useful_total += 1
             else:
                 continue
             
@@ -290,28 +297,31 @@ class CVR_Model(object):
                 if(i == ""):
                     continue
                 try:
-                    a = self.kw_dict[int(i[2:])]            
+                    a = self.kw_dict[int(i[2:])]
                 except:
-                    self.kw_dict[int(i[2:])] = kw_counter            
+                    self.kw_dict[int(i[2:])] = kw_counter
                     kw_counter += 1
 
-        print("Done pre-test: {} kws , {} useful lines , {} lines".format(kw_counter , click_line_count, line_count))
+        print("Done pre-test: {} kws , {} useful lines , {} lines".format(kw_counter , useful_total, line_count))
 
         #Create datasets
-        self.search_data = np.zeros((click_line_count+1, kw_counter+self.non_kw_dimensions))
-        self.search_data_u = np.zeros((click_line_count+1, self.non_kw_dimensions+1))
-        self.search_target_r = np.zeros(click_line_count+1)
-        self.search_target_c = np.zeros(click_line_count+1)
+        self.search_data = np.zeros((useful_total+1, kw_counter+self.non_kw_dimensions))
+        self.search_data_u = np.zeros((useful_total+1, self.non_kw_dimensions+1))
+        self.search_target_r = np.zeros(useful_total+1)
+        self.search_target_c = np.zeros(useful_total+1)
 
         #Reopen data file for reading
         input_file = csv.DictReader(open(file_name, "r"))
         useful_row_counter = 0
+        zero_counter = -1
 
         #----Load in the actual data
         for ind, row in enumerate(input_file):
 
-            if(pos_cvr and row["APPLICATIONS"] == ""):
-                continue
+            if(row["APPLICATIONS"] == ""):
+                zero_counter+=1                
+                if(pos_cvr < zeros_p[zero_counter]):
+                    continue
 
             if(int(row["CLICKS"]) == 0):
                 continue
@@ -414,7 +424,7 @@ class CVR_Model(object):
         
         to_analyze = self.search_data_scaled        
 
-        results_array = np.zeros((len(self.classifier_list), len(X)))        
+        results_array = np.zeros((len(self.classifier_list), len(to_analyze)))
         
         print("Analyzing using {} classifiers".format(len(self.classifier_list)))
         for index,clf in enumerate(self.classifier_list):
@@ -592,14 +602,14 @@ if(__name__ == "__main__"):
     model_root = "./models/model_test_19/"
 
     #----Model Building
-    model = CVR_Model()
-    model.build_model(in_file)
-    model.save_model(model_root)
+    #model = CVR_Model()
+    #model.build_model(in_file)
+    #model.save_model(model_root)
 
     #----Model validation
-    #model_val = CVR_Model()
-    #model_val.load_model(model_root)
-    #model_val.run_model(validation_file)
+    model_val = CVR_Model()
+    model_val.load_model(model_root)
+    model_val.run_model(validation_file)
     
     #---Model evaluation
     #model_eval = CVR_Model()

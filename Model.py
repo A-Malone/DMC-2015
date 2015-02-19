@@ -46,7 +46,6 @@ import csv
 import time
 import math
 import pickle
-import scipy
 #import matplotlib.pyplot as plt
 
 #----SKlearn imports
@@ -58,7 +57,7 @@ from sklearn.svm import LinearSVC
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, AdaBoostClassifier
 from sklearn.feature_selection import RFE, SelectKBest, f_regression
 from sklearn.grid_search import GridSearchCV
-from sklearn.metrics import classification_report
+from sklearn.metrics import classification_report, r2_score
 from sklearn.decomposition import PCA
 
 from sklearn import preprocessing
@@ -103,15 +102,13 @@ class CVR_Model(object):
         #Load in data
         self.load_data(file_name, True)
 
-        #----CONSTANTS
-        n = 15000               #Number of data points to train on
-        v = 1000               #number of data points to validate w/
-        t = 0.9
-        v = 0.1
+        #----CONSTANTS        
+        t = 0.7         #Percentage of data set to train on
+        v = 0.3         #Percentage of data set to test on
 
         train_d, train_t, val_d, val_t = self.get_random_sets(self.search_data_scaled, self.search_target_c, t, v)
         self.train_model(train_d, train_t)
-        self.classification_report(val_d, val_t, False)
+        self.get_classification_report(val_d, val_t)
 
         #self.train_model(self.search_data_scaled[:n], self.search_target_c[:n])
         #self.classification_report(self.search_data_scaled[n+1:n+v+1], self.search_target_c[n+1:n+v+1], False)
@@ -164,6 +161,7 @@ class CVR_Model(object):
         
         return (train_data, train_target, val_data, val_target)
 
+
     
     #----MODEL EVALUATION
     #------------------------------------------------------------------------------    
@@ -172,32 +170,33 @@ class CVR_Model(object):
         this_scores = cross_validation.cross_val_score(clf, X, y, n_jobs=-1, cv=folds)
         print("k_folding results: {}\n".format(this_scores))
 
-    def classification_report(self, X, y, verbose):
+    def get_classification_report(self, X, y, verbose=False):
         start = time.clock()
+
+        results_array = np.zeros((len(self.classifier_list), len(X)))        
         
-        for clf in self.classifier_list:
+        for index,clf in enumerate(self.classifier_list):
             print("Running data prediction for {}".format(type(clf)))
 
             predicted_data = clf.predict(X)
-            #Useful for analysis
-            #pred_av = np.mean([predicted_data[j] for j in range(len(predicted_data))], axis = 0)        
-
+            
+            results_array[index] = predicted_data
+            
+            R2 = clf.score(X, y)
+            print("Model R squared: {} -- {}\n".format(R2,type(clf)))
             report = classification_report(y, predicted_data, target_names=self.get_bucket_names())
+            print(report)
 
             if(verbose):
-                for i in range(v):
-                    #plt.plot(predicted_data[i] - pred_av)
+                for i in range(v):                    
                     print("{:.3f} - {}".format(y[i], predicted_data[i]))
-                #plt.showkt            
-            
-            #P1, Q1, Y1, somerd  = somersd([predicted_data, y])
-            kt = scipy.stats.kendalltau(y, predicted_data)     
-
-            R2 = clf.score(X, y)
-            print("Official R squared: {} -- {}\n".format(R2,type(clf)))
-            print("Official KT: {} -- {}\n".format(kt,type(clf)))
-            print(report)
-            print("Prediction time: {}s".format(time.clock() - start))
+                    
+         
+        final_result = np.mean(results_array, axis=0)            
+        print("Total R squared: {}\n".format(r2_score(final_result, y)))        
+       
+       
+        print("Prediction time: {}s".format(time.clock() - start))
 
     #----MODEL OPTIMIZATION
     #------------------------------------------------------------------------------ 
@@ -239,22 +238,23 @@ class CVR_Model(object):
         #----Inactive, tested, estimators
 
         #----CLASSIFERS        
-        #classifier_list.append(svc_rbf)
-        #classifier_list.append(neighbors.KNeighborsClassifier(10))
-        #classifier_list.append(AdaBoostClassifier(n_estimators=100))
-        #classifier_list.append(GradientBoostingClassifier(n_estimators=100, learning_rate=1.0, max_depth=1, random_state=0))
-        #classifier_list.append(RandomForestClassifier(n_estimators=10))
+        #self.classifier_list.append(svc_rbf)
+        #self.classifier_list.append(neighbors.KNeighborsClassifier(10))
+        #self.classifier_list.append(AdaBoostClassifier(n_estimators=100))
+        self.classifier_list.append(AdaBoostClassifier(n_estimators=100))
+        self.classifier_list.append(GradientBoostingClassifier(n_estimators=100, learning_rate=1.0, max_depth=1, random_state=0))
+        #self.classifier_list.append(RandomForestClassifier(n_estimators=10))
 
         #----REGRESSORS
-        #classifier_list.append(linear_model.LassoLars(alpha=.1))
-        #classifier_list.append(svm.SVR(C=1e2, gamma=0.1))
-        #classifier_list.append(linear_model.Lasso(alpha = 0.1))
-        #classifier_list.append(DecisionTreeRegressor(max_depth=3))
-        #classifier_list.append(linear_model.SGDRegressor(learning_rate='constant', eta0=0.1))
+        #self.classifier_list.append(linear_model.LassoLars(alpha=.1))
+        #self.classifier_list.append(svm.SVR(C=1e2, gamma=0.1))
+        #self.classifier_list.append(linear_model.Lasso(alpha = 0.1))
+        #self.classifier_list.append(DecisionTreeRegressor(max_depth=3))
+        #self.classifier_list.append(linear_model.SGDRegressor(learning_rate='constant', eta0=0.1))
 
         #----PIPELINES        
         #svc_lin = svm.SVC(kernel='linear')            #Linear SVC
-        #classifier_list.append(RFE(estimator=svc_lin, n_features_to_select=1, step=1))        
+        #self.classifier_list.append(RFE(estimator=svc_lin, n_features_to_select=1, step=1))        
 
 
     #----DATA LOADING
@@ -265,6 +265,9 @@ class CVR_Model(object):
         click_line_count = 0
         kw_counter = 0
         counter = 0
+
+        #Generate a new random  number for every element, append to array
+        #   Use the same array again
 
         input_file = csv.DictReader(open(file_name, "r"))
         for row in input_file:
@@ -366,7 +369,7 @@ class CVR_Model(object):
 
     def get_cvr_from_bucket(self, b):
         if(b == self.min_bucket):
-            return 0.023        #Sourced from the average conversion factor            
+            return 0.0        #Sourced from the average conversion factor            
         avg_cvr = (self.base**(b-1) + self.base**(b))/200.0
         return avg_cvr
 
@@ -409,24 +412,25 @@ class CVR_Model(object):
 
         n_class = float(len(self.classifier_list))
         
-        to_analyze = self.search_data_scaled
+        to_analyze = self.search_data_scaled        
 
-        predicted = np.zeros(len(to_analyze))
+        results_array = np.zeros((len(self.classifier_list), len(X)))        
+        
+        print("Analyzing using {} classifiers".format(len(self.classifier_list)))
+        for index,clf in enumerate(self.classifier_list):
+            predicted = clf.predict(to_analyze)
+            results_array[index] = np.array([self.get_cvr_from_bucket(x) for x in predicted])
 
-        #for clf in self.classifier_list:        
-        #    np.add(predicted, clf.predict(to_analyze))
-
-        predicted = self.classifier_list[0].predict(to_analyze)
-        #predicted /= n_class
-
+        final_result = np.mean(results_array, axis=0)
+        
         print("Predicted outcomes for {} rows".format(len(predicted)))
 
-        max_bids = np.zeros(len(predicted))
+        max_bids = np.zeros(len(final_result))
         
         #----Data is alligned properly
         input_file = csv.DictReader(open(data_file, "r"))
         for i,row in enumerate(input_file):            
-            max_bids[i] = self.get_max_bid(row, self.get_cvr_from_bucket(predicted[i]))
+            max_bids[i] = self.get_max_bid(row, final_result[i])
 
         N = len(predicted)        
         out_file = open('data_out.csv', 'w')
@@ -435,7 +439,7 @@ class CVR_Model(object):
                 if(i==0):                    
                     out_file.write("{},CR_PRED,BE_BID\n".format(in_file.readline().strip("\n")))
                     continue
-                out_file.write("{},{:.4f},{:.4f}\n".format(in_file.readline().strip("\n"),self.get_cvr_from_bucket(predicted[i]), max_bids[i]))
+                out_file.write("{},{:.4f},{:.4f}\n".format(in_file.readline().strip("\n"), final_result[i], max_bids[i]))
                 
 
     def test_model(self, data_file):
@@ -446,7 +450,7 @@ class CVR_Model(object):
         v = 3000               #number of data points to validate w/
         self.classification_report(self.search_data_scaled[o+1:o+v+1], self.search_target_c[o+1:o+v+1], False)
 
-    def load_validation_data(self, file_name):        
+    def load_validation_data(self, file_name, pos_cvr=False):        
         line_count = 0
         visit_line_count = 0        
         counter = 0
@@ -456,6 +460,7 @@ class CVR_Model(object):
         for row in input_file:
             
             line_count += 1                         #Count lines
+           
 
             if(row["VISITS"] != "" and int(row["VISITS"]) != 0):            #Skip if no clicks
                 visit_line_count += 1
@@ -582,9 +587,9 @@ def unpickle_model(infile):
 #Runs when the file is run
 if(__name__ == "__main__"):
     #The files from which the data is to be loaded
-    in_file  = "../Data/SEM_DAILY_BUILD.csv"    
+    in_file  = "../Data/SEM_DAILY_BUILD.csv"
     validation_file = "./DATASET.csv"
-    model_root = "./models/model_test_18/"
+    model_root = "./models/model_test_19/"
 
     #----Model Building
     model = CVR_Model()
